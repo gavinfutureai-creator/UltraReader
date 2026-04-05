@@ -1,0 +1,29 @@
+# UltraReader 默认配置
+
+# LLM 配置
+llm:
+  provider: ollama
+  model: qwen3.5:9b
+  base_url: http://localhost:11434
+  timeout: 300
+  temperature: 0.7
+  max_retries: 3
+
+# 处理流程配置
+pipeline:
+  chunk_size: 50000
+  overlap: 1000
+  preserve_history: true
+  context_window_warning: 200000
+
+# 输出配置
+output:
+  wiki_dir: wiki
+  output_dir: output
+  wiki_template: obsidian
+  include_raw_text: false
+
+# 处理配置
+processing:
+  max_retries: 3
+  retry_delay: 5

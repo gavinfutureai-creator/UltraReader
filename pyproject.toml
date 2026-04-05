@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ultra-reader"
+version = "0.1.0"
+description = "LLM-First 电子书拆书工具 - 基于本体论的知识库构建"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "UltraReader Team" }
+]
+keywords = [
+    "ebook",
+    "knowledge-base",
+    "llm",
+    "ontology",
+    "obsidian",
+    "knowledge-extraction"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "loguru>=0.7.0",
+    "ebooklib>=0.5.18",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+]
+
+[project.scripts]
+ultra-reader = "ultra_reader.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/your-repo/ultra-reader"
+Documentation = "https://github.com/your-repo/ultra-reader#readme"
+Repository = "https://github.com/your-repo/ultra-reader"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ultra_reader"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
