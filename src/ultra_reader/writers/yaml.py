@@ -33,16 +33,42 @@ class YAMLWriter(BaseWriter):
         def clean_dict(d: dict) -> dict:
             return {k: v for k, v in d.items() if v is not None and v != []}
 
-        entities = [
-            clean_dict({
+        # 按类型分组实体
+        type_groups: dict[str, list] = {}
+        untyped_entities: list = []
+
+        for e in ontology.entities:
+            entity_dict = clean_dict({
                 "name": e.name,
                 "type": e.entity_type,
                 "description": e.description,
                 "aliases": e.aliases if e.aliases else None,
                 "source_chapter": e.source_chapter + 1 if e.source_chapter is not None else None,
             })
-            for e in ontology.entities
-        ]
+            if e.entity_type:
+                if e.entity_type not in type_groups:
+                    type_groups[e.entity_type] = []
+                type_groups[e.entity_type].append(entity_dict)
+            else:
+                untyped_entities.append(entity_dict)
+
+        # 按定义的顺序排列类型
+        TYPE_ORDER = ["人物", "地点", "组织", "物品", "概念", "时间"]
+        sorted_types = sorted(type_groups.keys(), key=lambda t: TYPE_ORDER.index(t) if t in TYPE_ORDER else 999)
+
+        # 构建带分类的实体结构
+        typed_entities = []
+        for entity_type in sorted_types:
+            if type_groups[entity_type]:
+                typed_entities.append({
+                    "category": entity_type,
+                    "items": type_groups[entity_type]
+                })
+        if untyped_entities:
+            typed_entities.append({
+                "category": "未分类",
+                "items": untyped_entities
+            })
 
         relations = [
             clean_dict({
@@ -59,6 +85,8 @@ class YAMLWriter(BaseWriter):
             clean_dict({
                 "title": e.title,
                 "description": e.description,
+                "time": e.time,
+                "location": e.location,
                 "participants": e.participants if e.participants else None,
                 "chapter": e.chapter + 1 if e.chapter is not None else None,
             })
@@ -73,7 +101,10 @@ class YAMLWriter(BaseWriter):
                 "total_chapters": len(book.chapters),
                 "total_chars": book.total_chars,
             },
-            "entities": entities,
+            "entities": {
+                "total": len(ontology.entities),
+                "by_category": typed_entities,
+            },
             "relations": relations,
             "events": events,
             "concepts": ontology.concepts if ontology.concepts else None,

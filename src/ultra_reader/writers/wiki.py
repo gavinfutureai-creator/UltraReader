@@ -15,7 +15,8 @@ class WikiWriter(BaseWriter):
 
     def write(self, book: Book, ontology: Ontology) -> Path:
         """写入 Wiki 文件"""
-        book_dir = self.output_dir / self._sanitize_filename(book.title)
+        output_path = Path(self.output_dir)
+        book_dir = output_path / self._sanitize_filename(book.title)
         book_dir.mkdir(parents=True, exist_ok=True)
 
         self._write_index(book, ontology, book_dir)
@@ -23,6 +24,7 @@ class WikiWriter(BaseWriter):
         self._write_relations(book, ontology, book_dir)
         self._write_events(book, ontology, book_dir)
         self._write_concepts(book, ontology, book_dir)
+        self._write_themes(book, ontology, book_dir)
 
         return book_dir
 
@@ -101,7 +103,22 @@ event_count: {len(ontology.events)}
         entities_dir = book_dir / "entities"
         entities_dir.mkdir(exist_ok=True)
 
-        index_path = entities_dir / "index.md"
+        # 按类型分组实体
+        type_groups: dict[str, list] = {}
+        untyped_entities: list = []
+
+        for entity in ontology.entities:
+            if entity.entity_type:
+                if entity.entity_type not in type_groups:
+                    type_groups[entity.entity_type] = []
+                type_groups[entity.entity_type].append(entity)
+            else:
+                untyped_entities.append(entity)
+
+        # 定义的类型顺序
+        TYPE_ORDER = ["人物", "地点", "组织", "物品", "概念", "时间", "未分类"]
+        sorted_types = sorted(type_groups.keys(), key=lambda t: TYPE_ORDER.index(t) if t in TYPE_ORDER else 999)
+
         content = f"""---
 type: entities-index
 book: {book.title}
@@ -112,20 +129,39 @@ book: {book.title}
 > 共 {len(ontology.entities)} 个实体
 
 """
-        by_type: dict[str, list] = {}
-        for entity in ontology.entities:
-            entity_type = entity.entity_type or "未分类"
-            if entity_type not in by_type:
-                by_type[entity_type] = []
-            by_type[entity_type].append(entity)
+        # 输出有类型的实体
+        for entity_type in sorted_types:
+            if entity_type == "未分类":
+                continue
+            entities = type_groups.get(entity_type, [])
+            if entities:
+                content += f"## {entity_type}\n\n"
+                for entity in entities:
+                    chapter_info = f" (首次出现: 第{entity.source_chapter + 1}章)" if entity.source_chapter is not None else ""
+                    content += f"- [[{entity.name}]]{chapter_info}\n"
+                content += "\n"
 
-        for entity_type, entities in by_type.items():
-            content += f"### {entity_type}\n\n"
-            for entity in entities:
+        # 输出未分类实体
+        if untyped_entities:
+            content += "## 未分类\n\n"
+            for entity in untyped_entities:
                 chapter_info = f" (首次出现: 第{entity.source_chapter + 1}章)" if entity.source_chapter is not None else ""
                 content += f"- [[{entity.name}]]{chapter_info}\n"
             content += "\n"
 
+        # 输出按类型统计
+        content += "---\n\n## 统计\n\n"
+        content += "| 类型 | 数量 |\n|---------|---------|\n"
+        for entity_type in sorted_types:
+            if entity_type == "未分类":
+                continue
+            count = len(type_groups.get(entity_type, []))
+            if count > 0:
+                content += f"| {entity_type} | {count} |\n"
+        if untyped_entities:
+            content += f"| 未分类 | {len(untyped_entities)} |\n"
+
+        index_path = entities_dir / "index.md"
         index_path.write_text(content, encoding="utf-8")
 
     def _write_relations(self, book: Book, ontology: Ontology, book_dir: Path) -> None:
@@ -165,12 +201,89 @@ book: {book.title}
 > 共 {len(ontology.events)} 个重要事件
 
 """
+
         for i, event in enumerate(sorted_events, 1):
             chapter_info = f"第{event.chapter + 1}章" if event.chapter is not None else "未知"
-            content += f"### {i}. {event.title}\n\n- **章节**: {chapter_info}\n\n---\n\n"
 
-        content += "\n*返回: [[index|书籍首页]]*\n"
+            # 事件基本信息
+            content += f"### {i}. {event.title}\n\n"
+            content += f"- **章节**: {chapter_info}\n"
+
+            if event.location:
+                content += f"- **地点**: {event.location}\n"
+
+            # 人物格式: [[人物1、人物2、人物3]]
+            if event.participants:
+                participants_str = "、".join(event.participants)
+                content += f"- **人物**: [[{participants_str}]]\n"
+
+            # 事件格式: 切分 description 为多个 [[子事件]]
+            if event.description:
+                sub_events = self._split_into_sub_events(event.description)
+                if sub_events:
+                    events_str = "]], [[".join(sub_events) if len(sub_events) > 1 else sub_events[0]
+                    if len(sub_events) > 1:
+                        content += f"- **事件**: [[{events_str}]]\n"
+                    else:
+                        content += f"- **事件**: [[{events_str}]]\n"
+
+            content += "\n---\n\n"
+
+        content += "*返回: [[index|书籍首页]]*\n"
         events_path.write_text(content, encoding="utf-8")
+
+    def _split_into_sub_events(self, description: str) -> list[str]:
+        """将事件描述切分为多个子事件
+        
+        切分策略：
+        1. 按句号、逗号等标点切分
+        2. 过滤过短的片段（<5字符）
+        3. 过滤纯空白片段
+        4. 返回非空片段列表
+        """
+        # 移除多余空白
+        desc = description.strip()
+        if not desc:
+            return []
+
+        # 按常见分隔符切分：句号、逗号、分号
+        # 使用正则匹配句子结束标记
+        import re
+        # 按句子分隔（。！？）或明显的逗号分隔（，）
+        # 先按句子切分
+        sentences = re.split(r'[。！？；]', desc)
+        
+        sub_events = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            # 过滤过短或无意义的片段
+            if len(sentence) >= 5 and not self._is_meaningless(sentence):
+                sub_events.append(sentence)
+        
+        # 如果按句子切分后片段太少（只有1个），尝试按逗号再切分
+        if len(sub_events) <= 1 and len(sentences) > 1:
+            # 按逗号切分（但保留较长的片段）
+            parts = re.split(r'[，,]', desc)
+            sub_events = []
+            for part in parts:
+                part = part.strip()
+                if len(part) >= 8 and not self._is_meaningless(part):
+                    sub_events.append(part)
+        
+        return sub_events
+
+    def _is_meaningless(self, text: str) -> bool:
+        """检查文本是否无意义（纯停用词等）"""
+        meaningless_patterns = [
+            r'^[,，.。;；:：\s]+$',  # 只有标点或空白
+            r'^的$', r'^了$', r'^是$', r'^在$',  # 单独的字
+            r'^无$', r'^未知$',  # 无意义的词
+        ]
+        import re
+        for pattern in meaningless_patterns:
+            if re.match(pattern, text):
+                return True
+        return False
 
     def _write_concepts(self, book: Book, ontology: Ontology, book_dir: Path) -> None:
         """写入概念分析"""
@@ -191,3 +304,27 @@ book: {book.title}
 
         content += "\n---\n\n*返回: [[index|书籍首页]]*\n"
         concepts_path.write_text(content, encoding="utf-8")
+
+    def _write_themes(self, book: Book, ontology: Ontology, book_dir: Path) -> None:
+        """写入主题分析"""
+        themes_path = book_dir / "themes.md"
+
+        content = f"""---
+type: themes-index
+book: {book.title}
+---
+
+# 主题分析
+
+> 共 {len(ontology.themes)} 个核心主题
+
+"""
+
+        for theme in ontology.themes:
+            content += f"- [[{theme}]]\n"
+
+        if not ontology.themes:
+            content += "（暂无主题信息）\n"
+
+        content += "\n---\n\n*返回: [[index|书籍首页]]*\n"""
+        themes_path.write_text(content, encoding="utf-8")

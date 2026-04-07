@@ -19,6 +19,7 @@ def create_llm_client(config: Config) -> tuple[MinimaxLLM | OllamaLLM, str]:
             model=config.llm.model,
             api_key=config.llm.api_key,
             timeout=config.llm.timeout,
+            max_retries=config.llm.max_retries,
         ), "minimax"
     else:
         return OllamaLLM(

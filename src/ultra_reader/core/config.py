@@ -21,7 +21,7 @@ class LLMConfig(BaseModel):
     """LLM 配置"""
     # 主模型配置（首选）
     primary_provider: str = "minimax"
-    primary_model: str = "minimax-2.7"
+    primary_model: str = "MiniMax-M2.7"
     primary_base_url: str = "https://api.minimaxi.com/anthropic"
     primary_api_key: str = ""
     
@@ -93,6 +93,21 @@ class Config(BaseModel):
 
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        
+        # 处理 YAML 中的 llm 配置，兼容旧格式和新格式
+        if "llm" in data:
+            llm_data = data["llm"]
+            
+            # 兼容旧格式：直接使用 provider/model/base_url
+            if "provider" in llm_data and "primary_provider" not in llm_data:
+                llm_data["primary_provider"] = llm_data.pop("provider")
+            if "model" in llm_data and "primary_model" not in llm_data:
+                llm_data["primary_model"] = llm_data.pop("model")
+            if "base_url" in llm_data and "primary_base_url" not in llm_data:
+                llm_data["primary_base_url"] = llm_data.pop("base_url")
+            if "api_key" in llm_data and "primary_api_key" not in llm_data:
+                llm_data["primary_api_key"] = llm_data.pop("api_key")
+        
         return cls(**data)
 
     @classmethod
@@ -106,6 +121,8 @@ class Config(BaseModel):
             data.setdefault("llm", {})["primary_api_key"] = api_key
         if output_dir := os.getenv("ULTRAREADER_OUTPUT_DIR"):
             data.setdefault("output", {})["output_dir"] = output_dir
+        if provider := os.getenv("ULTRAREADER_LLM_PROVIDER"):
+            data.setdefault("llm", {})["primary_provider"] = provider
         return cls(**data) if data else cls()
 
     def use_fallback(self) -> None:
@@ -138,6 +155,8 @@ class Config(BaseModel):
             config.llm.primary_base_url = env_config.llm.primary_base_url
         if env_config.llm.primary_api_key:
             config.llm.primary_api_key = env_config.llm.primary_api_key
+        if env_config.llm.primary_provider:
+            config.llm.primary_provider = env_config.llm.primary_provider
         if env_config.output.output_dir:
             config.output.output_dir = env_config.output.output_dir
 

@@ -113,17 +113,25 @@ class Event(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     title: str
-    description: Optional[str] = None
-    participants: list[str] = Field(default_factory=list)
+    description: Optional[str] = None  # 事件详细描述（包含时间、地点、人物、经过等）
+    participants: list[str] = Field(default_factory=list)  # 主要人物
+    time: Optional[str] = None  # 发生时间
+    location: Optional[str] = None  # 发生地点
     chapter: Optional[int] = None
-    significance: Optional[str] = None
-    location: Optional[str] = None
+    significance: Optional[str] = None  # 事件意义
 
     def to_wiki_format(self) -> str:
-        """转换为 Wiki 格式"""
-        parts = ", ".join(f"[[{p}]]" for p in self.participants)
-        loc = f"，发生于[[{self.location}]]" if self.location else ""
-        return f"- **{self.title}**（{parts}]{loc}"
+        """转换为 Wiki 格式（详细版）"""
+        parts = ", ".join(f"[[{p}]]" for p in self.participants) if self.participants else "未知"
+        time_str = f"，发生于{self.time}" if self.time else ""
+        loc_str = f"，地点在[[{self.location}]]" if self.location else ""
+
+        result = f"- **{self.title}**（{parts}]{time_str}{loc_str}"
+
+        if self.description:
+            result += f"\n  - {self.description}"
+
+        return result
 
 
 class Ontology(BaseModel):
