@@ -18,6 +18,7 @@ from ultra_reader.core.logger import setup_logger
 from ultra_reader.llm.minimax import MinimaxLLM
 from ultra_reader.llm.ollama import OllamaLLM
 from ultra_reader.pipeline.runner import PipelineRunner
+from ultra_reader.qa.asker import QAAsker, WikiLoader
 
 
 console = Console()
@@ -186,6 +187,69 @@ def check(model, provider):
                 console.print(f"[red]✗ {message2}[/red]")
             
             return 1
+
+        return 0
+
+    exit_code = asyncio.run(_run())
+    sys.exit(exit_code)
+
+
+@cli.command()
+@click.argument("question")
+@click.option("-b", "--book", "book_title", default=None, help="指定书名（不指定则列出所有已处理的书）")
+@click.option("-m", "--model")
+@click.option("-p", "--provider", default=None, help="LLM provider: minimax 或 ollama")
+def ask(question, book_title, model, provider):
+    """向已处理书籍的知识库提问
+
+    不指定书名时列出所有可查询的书籍。
+    """
+    async def _run():
+        config = Config.load()
+        if model:
+            config.llm.primary_model = model
+        if provider:
+            config.llm.primary_provider = provider
+
+        loader = WikiLoader(wiki_root=config.output.wiki_dir)
+        books = loader.list_books()
+
+        if not book_title:
+            # 列出所有可查询的书
+            if not books:
+                console.print("[yellow]目前没有任何已处理的书，请先使用 process 命令处理书籍[/yellow]")
+                return 0
+
+            console.print("[bold]已处理的书:[/bold]")
+            for name in sorted(books):
+                console.print(f"  - {name}")
+            console.print(f"\n[dim]使用 ask -b <书名> <问题> 进行提问[/dim]")
+            return 0
+
+        # 检查书是否存在
+        if book_title not in books:
+            console.print(f"[red]未找到书籍: {book_title}[/red]")
+            console.print("[yellow]可用的书:[/yellow]")
+            for name in sorted(books):
+                console.print(f"  - {name}")
+            return 1
+
+        console.print(f"[dim]使用模型: {config.llm.primary_provider} ({config.llm.primary_model})[/dim]")
+        console.print(f"[dim]查询书籍: {book_title}[/dim]")
+
+        llm = create_llm(config, config.llm.primary_provider)
+        asker = QAAsker(llm=llm, wiki_root=config.output.wiki_dir)
+
+        console.print(f"\n[cyan]问题:[/cyan] {question}")
+
+        try:
+            with console.status("[yellow]思考中...[/yellow]"):
+                answer = await asker.ask(book_title, question)
+
+            console.print(f"\n[green]回答:[/green]")
+            console.print(answer)
+        finally:
+            await llm.close()
 
         return 0
 

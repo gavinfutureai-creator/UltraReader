@@ -111,6 +111,10 @@ class PipelineRunner:
 
             history_context = ontology.to_history_context()
 
+        # 生成书籍摘要
+        summary = await self._generate_book_summary(book, ontology)
+        ontology.summary = summary
+
         return ontology
 
     def _get_extraction_system_prompt(self) -> str:
@@ -555,3 +559,45 @@ class PipelineRunner:
                 # 添加到主题列表（去重）
                 if theme_name and theme_name not in ontology.themes:
                     ontology.themes.append(theme_name)
+
+    async def _generate_book_summary(self, book: Book, ontology: Ontology) -> str:
+        """生成书籍摘要"""
+        from ultra_reader.prompts.summary import SummaryPrompts
+
+        prompt = SummaryPrompts.book_summary(
+            book_title=book.title,
+            entities=[e.name for e in ontology.entities],
+            relations=[r.to_wiki_format() for r in ontology.relations],
+            events=[e.title for e in ontology.events],
+            concepts=ontology.concepts,
+        )
+
+        messages = [
+            {"role": "user", "content": prompt},
+        ]
+
+        response = await self.llm.chat(messages)
+        return self._parse_summary(response)
+
+    def _parse_summary(self, response: str) -> str:
+        """从 LLM 响应中提取摘要文本"""
+        lines = response.strip().split("\n")
+        summary_lines = []
+
+        for line in lines:
+            line = line.strip()
+            # 跳过标题行和空行
+            if not line:
+                continue
+            if line.startswith("#") or line.startswith("##"):
+                continue
+            # 去掉可能的列表前缀
+            line = line.lstrip("-*123456789.、 ")
+            if line:
+                summary_lines.append(line)
+
+        summary = " ".join(summary_lines).strip()
+        # 如果结果为空，尝试直接返回清理后的响应前500字
+        if not summary:
+            summary = response.strip()[:500]
+        return summary
